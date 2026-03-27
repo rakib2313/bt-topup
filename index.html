@@ -1978,7 +1978,6 @@
 
         // --- ১৯৭৯ লাইন থেকে নিচ পর্যন্ত এই কোডটি দিয়ে রিপ্লেস করুন ---
 
-    // Main Verify Handler
     function handleNewVerify() {
         const trxInput = document.getElementById('pay-trx-input');
         if (!trxInput) return;
@@ -1992,7 +1991,6 @@
         verifyRupantorPayment(trxId, amount);
     }
 
-    // RupantorPay API Verification Logic
     async function verifyRupantorPayment(trxId, amount) {
         trxId = trxId.toUpperCase();
         
@@ -2003,11 +2001,12 @@
             didOpen: () => { Swal.showLoading() }
         });
 
-        // আপনার API Key
-        const apiKey = "QJJ0xbJFqVGaMP049HTOfIDusDocQaWvNzIXyNOqzmMO0lOxB";
+        // আপনার সঠিক API Key
+        const apiKey = "QJJ0xbJFqVGaMP049HTOfIDusDocQaWvNzlXyNOqzmM0Ol0xBv";
         
-        // সঠিক API URL (RupantorPay এর নতুন ভেরিফাই এন্ডপয়েন্ট)
-        const apiUrl = "https://rupantorpay.com/api/v1/verify-payment";
+        // CORS সমস্যা এড়াতে AllOrigins Proxy ব্যবহার করা হয়েছে
+        const proxyUrl = "https://api.allorigins.win/get?url=";
+        const targetUrl = encodeURIComponent(`https://rupantorpay.com/api/v1/verify-payment?api_key=${apiKey}&trx_id=${trxId}`);
 
         try {
             // ডুপ্লিকেট ট্রানজেকশন চেক
@@ -2016,57 +2015,51 @@
                 return Swal.fire('ব্যবহৃত', 'এই ট্রানজেকশন আইডিটি ইতিমধ্যে ব্যবহার করা হয়েছে।', 'error');
             }
 
-            // API কল
-            const response = await fetch(apiUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    api_key: apiKey,
-                    trx_id: trxId
-                })
-            });
+            // Proxy এর মাধ্যমে API কল
+            const response = await fetch(proxyUrl + targetUrl);
+            const proxyData = await response.json();
+            const data = JSON.parse(proxyData.contents);
 
-            const data = await response.json();
-
-            // পেমেন্ট সফল হলে
+            // পেমেন্ট সফল হলে (Status success অথবা COMPLETED)
             if (data.status === "success" || data.payment_status === "COMPLETED") {
                 const userRef = db.collection('users').doc(currentUser.uid);
                 
                 await db.runTransaction(async (transaction) => {
                     const userDoc = await transaction.get(userRef);
-                    const newBalance = (userDoc.data().balance || 0) + parseInt(amount);
-                    transaction.update(userRef, { balance: newBalance });
+                    const currentBalance = userDoc.data().balance || 0;
+                    // RupantorPay থেকে আসা আসল পরিমাণটি যোগ করা হচ্ছে
+                    const paidAmount = data.amount || amount; 
+                    transaction.update(userRef, { balance: currentBalance + parseInt(paidAmount) });
                 });
 
                 await db.collection('deposits').add({
                     userId: currentUser.uid,
                     userEmail: currentUser.email,
-                    amount: parseInt(amount),
+                    amount: parseInt(data.amount || amount),
                     trxId: trxId,
                     status: 'approved',
                     method: 'RupantorPay Auto',
                     date: new Date()
                 });
 
-                Swal.fire('সফল!', `৳${amount} যোগ করা হয়েছে।`, 'success').then(() => { location.reload(); });
+                Swal.fire('সফল!', `৳${data.amount || amount} যোগ করা হয়েছে।`, 'success').then(() => { location.reload(); });
             } 
             else {
                 Swal.fire({
                     title: 'ভেরিফাই হয়নি',
-                    text: data.message || 'সঠিক ট্রানজেকশন আইডি দিন। আপনি কি এটি ম্যানুয়ালি পাঠাতে চান?',
+                    text: data.message || 'সঠিক আইডি দিন অথবা ম্যানুয়ালি রিকোয়েস্ট পাঠান।',
                     icon: 'error',
                     showCancelButton: true,
-                    confirmButtonText: 'হ্যাঁ, ম্যানুয়াল পাঠান'
+                    confirmButtonText: 'ম্যানুয়াল পাঠান'
                 }).then((result) => {
                     if (result.isConfirmed) { submitDeposit(trxId, amount); }
                 });
             }
         } catch (error) {
             console.error("Error:", error);
-            // সার্ভার কানেকশন না পেলে সরাসরি ম্যানুয়াল অপশন দিয়ে দেওয়া
             Swal.fire({
-                title: 'কানেকশন এরর',
-                text: 'গেটওয়ে সার্ভারে সমস্যা হচ্ছে। আপনি কি ম্যানুয়ালি রিকোয়েস্ট পাঠাতে চান?',
+                title: 'সার্ভার সমস্যা',
+                text: 'অটো-ভেরিফাই এখন কাজ করছে না। ম্যানুয়ালি পাঠান?',
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonText: 'হ্যাঁ, পাঠান'
@@ -2076,10 +2069,8 @@
         }
     }
 
-    // Manual Deposit Logic
     function submitDeposit(trxId, amount) {
         Swal.fire({ title: 'Submitting...', didOpen: () => { Swal.showLoading() } });
-
         db.collection('deposits').add({
             userId: currentUser.uid, 
             amount: parseInt(amount), 
@@ -2087,7 +2078,7 @@
             status: 'pending', 
             date: new Date(), 
             userEmail: currentUser.email,
-            method: 'Manual Review'
+            method: 'Manual (Auto Failed)'
         }).then(() => {
             Swal.fire('জমা হয়েছে', 'এডমিন চেক করে এপ্রুভ করে দেবে।', 'success').then(() => { location.reload(); });
         });
