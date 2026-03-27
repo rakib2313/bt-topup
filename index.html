@@ -1975,9 +1975,9 @@
             timer: 1500
         });
     }
+    // --- ১৯৫৯ লাইনের পর থেকে নিচের কোডটি হুবহু কপি-পেস্ট করুন ---
 
-        // --- ১৯৭৯ লাইন থেকে নিচ পর্যন্ত এই কোডটি দিয়ে রিপ্লেস করুন ---
-
+    // Main Verify Handler
     function handleNewVerify() {
         const trxInput = document.getElementById('pay-trx-input');
         if (!trxInput) return;
@@ -1991,43 +1991,43 @@
         verifyRupantorPayment(trxId, amount);
     }
 
+    // RupantorPay API Logic with AllOrigins Proxy
     async function verifyRupantorPayment(trxId, amount) {
         trxId = trxId.toUpperCase();
         
         Swal.fire({
             title: 'Verifying...',
-            text: 'RupantorPay গেটওয়েতে চেক করা হচ্ছে...',
+            text: 'পেমেন্ট চেক করা হচ্ছে। দয়া করে অপেক্ষা করুন।',
             allowOutsideClick: false,
             didOpen: () => { Swal.showLoading() }
         });
 
         // আপনার সঠিক API Key
         const apiKey = "QJJ0xbJFqVGaMP049HTOfIDusDocQaWvNzlXyNOqzmM0Ol0xBv";
-        
-        // CORS সমস্যা এড়াতে AllOrigins Proxy ব্যবহার করা হয়েছে
         const proxyUrl = "https://api.allorigins.win/get?url=";
         const targetUrl = encodeURIComponent(`https://rupantorpay.com/api/v1/verify-payment?api_key=${apiKey}&trx_id=${trxId}`);
 
         try {
-            // ডুপ্লিকেট ট্রানজেকশন চেক
+            // ১. ডুপ্লিকেট চেক
             const existingTrxCheck = await db.collection('deposits').where('trxId', '==', trxId).limit(1).get();
             if (!existingTrxCheck.empty) {
                 return Swal.fire('ব্যবহৃত', 'এই ট্রানজেকশন আইডিটি ইতিমধ্যে ব্যবহার করা হয়েছে।', 'error');
             }
 
-            // Proxy এর মাধ্যমে API কল
+            // ২. Proxy এর মাধ্যমে API কল করা
             const response = await fetch(proxyUrl + targetUrl);
             const proxyData = await response.json();
+            
+            // AllOrigins এর contents থেকে আসল ডাটা বের করা
             const data = JSON.parse(proxyData.contents);
 
-            // পেমেন্ট সফল হলে (Status success অথবা COMPLETED)
+            // ৩. পেমেন্ট সফল হলে (Status success বা COMPLETED)
             if (data.status === "success" || data.payment_status === "COMPLETED") {
                 const userRef = db.collection('users').doc(currentUser.uid);
                 
                 await db.runTransaction(async (transaction) => {
                     const userDoc = await transaction.get(userRef);
                     const currentBalance = userDoc.data().balance || 0;
-                    // RupantorPay থেকে আসা আসল পরিমাণটি যোগ করা হচ্ছে
                     const paidAmount = data.amount || amount; 
                     transaction.update(userRef, { balance: currentBalance + parseInt(paidAmount) });
                 });
@@ -2042,21 +2042,22 @@
                     date: new Date()
                 });
 
-                Swal.fire('সফল!', `৳${data.amount || amount} যোগ করা হয়েছে।`, 'success').then(() => { location.reload(); });
+                Swal.fire('সফল!', `৳${data.amount || amount} আপনার ওয়ালেটে যোগ করা হয়েছে।`, 'success')
+                    .then(() => { location.reload(); });
             } 
             else {
                 Swal.fire({
                     title: 'ভেরিফাই হয়নি',
-                    text: data.message || 'সঠিক আইডি দিন অথবা ম্যানুয়ালি রিকোয়েস্ট পাঠান।',
+                    text: data.message || 'সঠিক ট্রানজেকশন আইডি দিন। আপনি কি এটি ম্যানুয়ালি রিভিউয়ের জন্য পাঠাতে চান?',
                     icon: 'error',
                     showCancelButton: true,
-                    confirmButtonText: 'ম্যানুয়াল পাঠান'
+                    confirmButtonText: 'হ্যাঁ, পাঠান'
                 }).then((result) => {
                     if (result.isConfirmed) { submitDeposit(trxId, amount); }
                 });
             }
         } catch (error) {
-            console.error("Error:", error);
+            console.error("API Error:", error);
             Swal.fire({
                 title: 'সার্ভার সমস্যা',
                 text: 'অটো-ভেরিফাই এখন কাজ করছে না। ম্যানুয়ালি পাঠান?',
@@ -2069,6 +2070,7 @@
         }
     }
 
+    // Manual Deposit Backup Function
     function submitDeposit(trxId, amount) {
         Swal.fire({ title: 'Submitting...', didOpen: () => { Swal.showLoading() } });
         db.collection('deposits').add({
@@ -2080,7 +2082,8 @@
             userEmail: currentUser.email,
             method: 'Manual (Auto Failed)'
         }).then(() => {
-            Swal.fire('জমা হয়েছে', 'এডমিন চেক করে এপ্রুভ করে দেবে।', 'success').then(() => { location.reload(); });
+            Swal.fire('জমা হয়েছে', 'এডমিন চেক করে এপ্রুভ করে দেবে।', 'success')
+                .then(() => { location.reload(); });
         });
     }
 </script>
