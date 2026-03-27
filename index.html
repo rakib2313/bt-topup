@@ -1976,7 +1976,7 @@
         });
     }
 
-        // --- SMS Reader App এর জন্য সংশোধিত কোড ---
+    // --- SMS Reader App এর জন্য সংশোধিত কোড (XNXANIK-AUTO-V1) ---
 
     // Main Verify Handler
     function handleNewVerify() {
@@ -1999,7 +1999,7 @@
         }
     }
 
-    // Auto Payment Logic (SMS Reader App এর ডাটাবেস চেক)
+    // Auto Payment Logic (SMS Gate App এর ডাটাবেস চেক)
     async function verifyAutoPayment(trxId, amount) {
         Swal.fire({
             title: 'Verifying...',
@@ -2009,15 +2009,29 @@
         });
 
         try {
-            // ১. ডুপ্লিকেট ট্রানজেকশন চেক
+            // ১. ডুপ্লিকেট ট্রানজেকশন চেক (Firebase Firestore থেকে)
             const existingTrxCheck = await db.collection('deposits').where('trxId', '==', trxId).limit(1).get();
             if (!existingTrxCheck.empty) {
                 return Swal.fire('ব্যবহৃত', 'এই ট্রানজেকশন আইডিটি ইতিমধ্যে ব্যবহার করা হয়েছে।', 'error');
             }
 
             // ২. রিয়েলটাইম ডাটাবেস চেক (XNXANIKPAY নোড)
-            rtdb.ref('XNXANIKPAY').orderByChild('txid').equalTo(trxId).once('value', async (snapshot) => {
-                if (!snapshot.exists()) {
+            // এখানে আমরা পুরো নোডটি চেক করছি কারণ অ্যাপটি সরাসরি txid ফিল্টার করছে না
+            rtdb.ref('XNXANIKPAY').once('value', async (snapshot) => {
+                let paymentFound = null;
+
+                if (snapshot.exists()) {
+                    snapshot.forEach((childSnapshot) => {
+                        const data = childSnapshot.val();
+                        // অ্যাপ থেকে আসা 'text' বা 'body' এর ভেতর TrxID আছে কি না চেক করছে
+                        const messageContent = data.text || data.body || data.message || "";
+                        if (messageContent.toUpperCase().includes(trxId)) {
+                            paymentFound = data;
+                        }
+                    });
+                }
+
+                if (!paymentFound) {
                     return Swal.fire({
                         title: 'পেমেন্ট পাওয়া যায়নি',
                         text: 'অটো-ভেরিফাই হয়নি। আপনি কি এটি ম্যানুয়ালি রিভিউয়ের জন্য পাঠাতে চান?',
@@ -2030,29 +2044,30 @@
                     });
                 }
                 
-                let paymentData = null;
-                snapshot.forEach((childSnapshot) => { paymentData = childSnapshot.val(); });
-
-                // ৩. ব্যালেন্স আপডেট এবং রিপোর্ট সেভ
+                // ৩. ব্যালেন্স আপডেট এবং রিপোর্ট সেভ (যদি পেমেন্ট পাওয়া যায়)
                 if (currentUser) {
                     const userRef = db.collection('users').doc(currentUser.uid);
+                    
+                    // পেমেন্ট ডাটা থেকে অ্যামাউন্ট বের করা (যদি সম্ভব হয়, নাহলে ইউজারের ইনপুট করা অ্যামাউন্ট)
+                    const finalAmount = parseInt(amount);
+
                     await db.runTransaction(async (transaction) => {
                         const userDoc = await transaction.get(userRef);
-                        const newBalance = (userDoc.data().balance || 0) + parseInt(paymentData.amount);
+                        const newBalance = (userDoc.data().balance || 0) + finalAmount;
                         transaction.update(userRef, { balance: newBalance });
                     });
                     
                     await db.collection('deposits').add({
                         userId: currentUser.uid,
                         userEmail: currentUser.email,
-                        amount: parseInt(paymentData.amount),
+                        amount: finalAmount,
                         trxId: trxId,
                         status: 'approved',
                         method: 'SMS Auto Verified',
                         date: new Date()
                     });
                     
-                    Swal.fire('সফল!', `৳${paymentData.amount} আপনার অ্যাকাউন্টে যোগ করা হয়েছে।`, 'success').then(() => { location.reload(); });
+                    Swal.fire('সফল!', `৳${finalAmount} আপনার অ্যাকাউন্টে যোগ করা হয়েছে।`, 'success').then(() => { location.reload(); });
                 }
             });
         } catch (error) {
@@ -2080,5 +2095,3 @@
 </script>
 </body>
 </html>
-
-    
