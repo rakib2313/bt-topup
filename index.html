@@ -1976,122 +1976,138 @@
         });
     }
 
-    // --- SMS Reader App এর জন্য সংশোধিত কোড (XNXANIK-AUTO-V1) ---
-
     // Main Verify Handler
     function handleNewVerify() {
-        try {
-            const trxInput = document.getElementById('pay-trx-input');
-            if (!trxInput) return;
-            
-            const trxId = trxInput.value.trim().toUpperCase();
-            if (!trxId) {
-                return Swal.fire('প্রয়োজনীয়', 'দয়া করে ট্রানজেকশন আইডি দিন।', 'warning');
+        const trxId = document.getElementById('pay-trx-input').value.trim();
+        if (!trxId) {
+            return Swal.fire('Required', 'Please enter the Transaction ID.', 'warning');
+        }
+
+        if (typeof isAutoPayEnabled !== 'undefined' && isAutoPayEnabled) {
+            verifyAutoPayment(trxId, currentDepositAmount);
+        } else {
+            if (typeof isDirectBuy !== 'undefined' && isDirectBuy) {
+                Swal.fire('Notice', 'Manual verification is not supported for Instant Buy.', 'warning');
+            } else {
+                submitDeposit(trxId, currentDepositAmount);
             }
-
-            const amount = (typeof currentDepositAmount !== 'undefined') ? currentDepositAmount : 0;
-
-            // অটো ভেরিফাই ফাংশন কল করা হচ্ছে
-            verifyAutoPayment(trxId, amount);
-        } catch (e) {
-            console.error(e);
-            Swal.fire('Error', 'সিস্টেম লোড হতে সমস্যা হচ্ছে। পেজটি রিফ্রেশ দিন।', 'error');
         }
     }
 
-    // Auto Payment Logic (SMS Gate App এর ডাটাবেস চেক)
-    async function verifyAutoPayment(trxId, amount) {
-        Swal.fire({
-            title: 'Verifying...',
-            text: 'পেমেন্ট চেক করা হচ্ছে। দয়া করে অপেক্ষা করুন।',
-            allowOutsideClick: false,
-            didOpen: () => { Swal.showLoading() }
-        });
+    // --- REUSED EXISTING LOGIC FUNCTIONS ---
 
-        try {
-            // ১. ডুপ্লিকেট ট্রানজেকশন চেক (Firebase Firestore থেকে)
-            const existingTrxCheck = await db.collection('deposits').where('trxId', '==', trxId).limit(1).get();
-            if (!existingTrxCheck.empty) {
-                return Swal.fire('ব্যবহৃত', 'এই ট্রানজেকশন আইডিটি ইতিমধ্যে ব্যবহার করা হয়েছে।', 'error');
-            }
-
-            // ২. রিয়েলটাইম ডাটাবেস চেক (XNXANIKPAY নোড)
-            // এখানে আমরা পুরো নোডটি চেক করছি কারণ অ্যাপটি সরাসরি txid ফিল্টার করছে না
-            rtdb.ref('XNXANIKPAY').once('value', async (snapshot) => {
-                let paymentFound = null;
-
-                if (snapshot.exists()) {
-                    snapshot.forEach((childSnapshot) => {
-                        const data = childSnapshot.val();
-                        // অ্যাপ থেকে আসা 'text' বা 'body' এর ভেতর TrxID আছে কি না চেক করছে
-                        const messageContent = data.text || data.body || data.message || "";
-                        if (messageContent.toUpperCase().includes(trxId)) {
-                            paymentFound = data;
-                        }
-                    });
-                }
-
-                if (!paymentFound) {
-                    return Swal.fire({
-                        title: 'পেমেন্ট পাওয়া যায়নি',
-                        text: 'অটো-ভেরিফাই হয়নি। আপনি কি এটি ম্যানুয়ালি রিভিউয়ের জন্য পাঠাতে চান?',
-                        icon: 'question',
-                        showCancelButton: true,
-                        confirmButtonText: 'হ্যাঁ, পাঠান',
-                        cancelButtonText: 'না'
-                    }).then((result) => {
-                        if (result.isConfirmed) { submitDeposit(trxId, amount); }
-                    });
-                }
-                
-                // ৩. ব্যালেন্স আপডেট এবং রিপোর্ট সেভ (যদি পেমেন্ট পাওয়া যায়)
-                if (currentUser) {
-                    const userRef = db.collection('users').doc(currentUser.uid);
-                    
-                    // পেমেন্ট ডাটা থেকে অ্যামাউন্ট বের করা (যদি সম্ভব হয়, নাহলে ইউজারের ইনপুট করা অ্যামাউন্ট)
-                    const finalAmount = parseInt(amount);
-
-                    await db.runTransaction(async (transaction) => {
-                        const userDoc = await transaction.get(userRef);
-                        const newBalance = (userDoc.data().balance || 0) + finalAmount;
-                        transaction.update(userRef, { balance: newBalance });
-                    });
-                    
-                    await db.collection('deposits').add({
-                        userId: currentUser.uid,
-                        userEmail: currentUser.email,
-                        amount: finalAmount,
-                        trxId: trxId,
-                        status: 'approved',
-                        method: 'SMS Auto Verified',
-                        date: new Date()
-                    });
-                    
-                    Swal.fire('সফল!', `৳${finalAmount} আপনার অ্যাকাউন্টে যোগ করা হয়েছে।`, 'success').then(() => { location.reload(); });
-                }
-            });
-        } catch (error) {
-            console.error(error);
-            Swal.fire('ব্যর্থ', 'ডাটাবেস কানেকশনে সমস্যা হয়েছে।', 'error');
-        }
-    }
-
-    // Manual Deposit Logic (যদি অটো না হয়)
+    // Manual Deposit Logic
     function submitDeposit(trxId, amount) {
-        Swal.fire({ title: 'Submitting...', didOpen: () => { Swal.showLoading() } });
-
+        Swal.showLoading();
         db.collection('deposits').add({
             userId: currentUser.uid, 
             amount: parseInt(amount), 
-            trxId: trxId, 
+            trxId: trxId.toUpperCase(), 
             status: 'pending', 
             date: new Date(), 
             userEmail: currentUser.email,
-            method: 'Manual Review'
+            method: currentPaymentMethod
         }).then(() => {
-            Swal.fire('অর্ডার জমা হয়েছে', 'এডমিন চেক করে ব্যালেন্স অ্যাড করে দেবে।', 'success').then(() => { location.reload(); });
+            Swal.fire({
+                title: 'Request Submitted', 
+                text: 'Your deposit request has been sent. Please wait for admin approval.', 
+                icon: 'success',
+                confirmButtonColor: '#d33'
+            }).then(() => {
+                showSec('home'); // Go home after success
+            });
         }).catch(err => Swal.fire('Error', err.message, 'error'));
     }
+
+    // Auto Payment Logic
+    async function verifyAutoPayment(trxId, amount) {
+        trxId = trxId.toUpperCase();
+        
+        Swal.fire({
+            title: 'Verifying...',
+            text: 'Please wait while we check your transaction.',
+            didOpen: () => { Swal.showLoading() }
+        });
+
+        // Step 1: Check duplication
+        const existingTrxCheck = await db.collection('deposits').where('trxId', '==', trxId).limit(1).get();
+        if (!existingTrxCheck.empty) {
+            return Swal.fire('Used', 'This Transaction ID has already been used.', 'error');
+        }
+
+        // Step 2: Check Realtime DB
+        rtdb.ref('XNXANIKPAY').orderByChild('txid').equalTo(trxId).once('value', async (snapshot) => {
+            if (!snapshot.exists()) {
+                return Swal.fire('Not Found', 'Transaction ID not found. Please try again or contact support.', 'error');
+            }
+            
+            let paymentData = null;
+            snapshot.forEach((childSnapshot) => {
+                paymentData = childSnapshot.val();
+            });
+
+            // Verify Amount
+            if (parseInt(paymentData.amount) !== parseInt(amount)) {
+                return Swal.fire('Mismatch', `Amount mismatch! You entered ${amount} but system found ${paymentData.amount}.`, 'error');
+            }
+
+            const amountToAdd = parseInt(paymentData.amount);
+            const userRef = db.collection('users').doc(currentUser.uid);
+
+            try {
+                // 1. Add Balance First
+                await db.runTransaction(async (transaction) => {
+                    const userDoc = await transaction.get(userRef);
+                    const newBalance = (userDoc.data().balance || 0) + amountToAdd;
+                    transaction.update(userRef, { balance: newBalance });
+                });
+                
+                await db.collection('deposits').add({
+                    userId: currentUser.uid,
+                    userEmail: currentUser.email,
+                    amount: amountToAdd,
+                    trxId: trxId,
+                    status: 'approved',
+                    method: currentPaymentMethod + ' (Auto)',
+                    date: new Date()
+                });
+                
+                // 2. If Direct Buy (Instant Pay), Trigger Order Immediately
+                if (isDirectBuy && pendingDirectOrder) {
+                    // Update local balance variable immediately so process functions don't fail
+                    userBalance += amountToAdd; 
+                    
+                    Swal.fire({
+                        title: 'Payment Verified!',
+                        text: 'Processing your order now...',
+                        icon: 'success',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                    
+                    // Trigger the specific order function
+                    if (pendingDirectOrder.gameType === 'code') {
+                         await processVoucherOrder(pendingDirectOrder.playerId);
+                    } else if (pendingDirectOrder.gameType === 'auto-topup') {
+                         await processAutoTopUpOrder(pendingDirectOrder.playerId);
+                    } else {
+                         processUidOrder(pendingDirectOrder.playerId);
+                    }
+                    
+                    isDirectBuy = false;
+                    pendingDirectOrder = null;
+                } else {
+                    Swal.fire('Success', `Successfully added ৳${amountToAdd} to your wallet.`, 'success')
+                        .then(() => showSec('home'));
+                }
+                
+            } catch (error) {
+                console.error("Auto payment error:", error);
+                Swal.fire('Failed', 'System error during balance update. Contact support.', 'error');
+            }
+        });
+    }
+
 </script>
 </body>
 </html>
