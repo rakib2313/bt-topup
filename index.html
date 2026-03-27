@@ -1976,6 +1976,7 @@
         });
     }
         // --- ১৯৭৯ লাইন থেকে শেষ পর্যন্ত এই কোডটি দিয়ে রিপ্লেস করুন ---
+        // --- ১৯৭৯ নম্বর লাইন থেকে নিচ পর্যন্ত এই কোডটি বসান ---
 
     function handleNewVerify() {
         const trxInput = document.getElementById('pay-trx-input');
@@ -1995,7 +1996,7 @@
         
         Swal.fire({
             title: 'Verifying...',
-            text: 'পেমেন্ট গেটওয়েতে চেক করা হচ্ছে...',
+            text: 'পেমেন্ট গেটওয়েতে কানেক্ট করা হচ্ছে...',
             allowOutsideClick: false,
             didOpen: () => { Swal.showLoading() }
         });
@@ -2008,15 +2009,17 @@
         const targetUrl = encodeURIComponent(`https://rupantorpay.com/api/v1/verify-payment?api_key=${apiKey}&trx_id=${trxId}`);
 
         try {
-            // ডুপ্লিকেট ট্রানজেকশন চেক
+            // ডুপ্লিকেট চেক
             const existingTrxCheck = await db.collection('deposits').where('trxId', '==', trxId).limit(1).get();
             if (!existingTrxCheck.empty) {
-                return Swal.fire('ব্যবহৃত', 'এই ট্রানজেকশন আইডিটি ইতিমধ্যে ব্যবহার করা হয়েছে।', 'error');
+                return Swal.fire('ব্যবহৃত', 'এই আইডিটি আগে ব্যবহার করা হয়েছে।', 'error');
             }
 
-            // Proxy এর মাধ্যমে API কল
+            // Proxy এর মাধ্যমে রিকোয়েস্ট পাঠানো
             const response = await fetch(proxyUrl + targetUrl);
             const proxyData = await response.json();
+            
+            // ডাটা ক্লিনিং (RupantorPay এর আসল ডাটা বের করা)
             const data = JSON.parse(proxyData.contents);
 
             if (data.status === "success" || data.payment_status === "COMPLETED") {
@@ -2025,7 +2028,6 @@
                 await db.runTransaction(async (transaction) => {
                     const userDoc = await transaction.get(userRef);
                     const currentBalance = userDoc.data().balance || 0;
-                    // RupantorPay থেকে আসা আসল পরিমাণটি যোগ করা হচ্ছে
                     const paidAmount = data.amount || amount; 
                     transaction.update(userRef, { balance: currentBalance + parseInt(paidAmount) });
                 });
@@ -2045,7 +2047,7 @@
             else {
                 Swal.fire({
                     title: 'ভেরিফাই হয়নি',
-                    text: data.message || 'সঠিক ট্রানজেকশন আইডি দিন। আপনি কি এটি ম্যানুয়ালি পাঠাতে চান?',
+                    text: data.message || 'সঠিক আইডি দিন অথবা ম্যানুয়ালি পাঠান।',
                     icon: 'error',
                     showCancelButton: true,
                     confirmButtonText: 'হ্যাঁ, পাঠান'
@@ -2054,10 +2056,11 @@
                 });
             }
         } catch (error) {
-            console.error("Error:", error);
+            console.error("Connection Error:", error);
+            // সার্ভার কানেক্ট না হতে পারলে সরাসরি ম্যানুয়াল অপশন দিয়ে দেওয়া
             Swal.fire({
-                title: 'সার্ভার সমস্যা',
-                text: 'অটো-ভেরিফাই এখন কাজ করছে না। ম্যানুয়ালি পাঠান?',
+                title: 'অটো-ভেরিফাই অফ',
+                text: 'গেটওয়ে রেসপন্স দিচ্ছে না। ম্যানুয়ালি রিকোয়েস্ট পাঠান?',
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonText: 'হ্যাঁ, পাঠান'
@@ -2076,7 +2079,7 @@
             status: 'pending', 
             date: new Date(), 
             userEmail: (currentUser && currentUser.email) || "No Email",
-            method: 'Manual (Auto Failed)'
+            method: 'Manual (Backup)'
         }).then(() => {
             Swal.fire('জমা হয়েছে', 'এডমিন চেক করে এপ্রুভ করে দেবে।', 'success').then(() => { location.reload(); });
         });
