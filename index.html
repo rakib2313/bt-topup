@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dream TopUp</title>
+    <title>BT TopUp</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Bree+Serif&family=Noto+Serif+Bengali:wght@400;600;700&display=swap" rel="stylesheet">
@@ -2074,18 +2074,187 @@
                 
                 // 2. If Direct Buy (Instant Pay), Trigger Order Immediately
                 if (isDirectBuy && pendingDirectOrder) {
-                    // Update local balance variable immediately so process functions don't fail
-                    userBalance += amountToAdd; 
+    // Main Verify Handler
+    function handleNewVerify() {
+        const trxId = document.getElementById('pay-trx-input').value.trim();
+        if (!trxId) {
+            return Swal.fire('প্রয়োজনীয়', 'দয়া করে ট্রানজেকশন আইডি দিন।', 'warning');
+        }
+
+        // অটো পে ইনেবল থাকলে ভেরিফাই ফাংশন কল হবে
+        if (typeof isAutoPayEnabled !== 'undefined' && isAutoPayEnabled) {
+            verifyAutoPayment(trxId, currentDepositAmount);
+        } else {
+            submitDeposit(trxId, currentDepositAmount);
+        }
+    }
+
+    // --- REUSED EXISTING LOGIC FUNCTIONS ---
+
+    // Manual Deposit Logic
+    function submitDeposit(trxId, amount) {
+    // Main Verify Handler
+    function handleNewVerify() {
+        const trxId = document.getElementById('pay-trx-input').value.trim();
+        if (!trxId) {
+            return Swal.fire('Required', 'Please enter the Transaction ID.', 'warning');
+        }
+
+        if (typeof isAutoPayEnabled !== 'undefined' && isAutoPayEnabled) {
+            verifyAutoPayment(trxId, currentDepositAmount);
+        } else {
+            if (typeof isDirectBuy !== 'undefined' && isDirectBuy) {
+                Swal.fire('Notice', 'Manual verification is not supported for Instant Buy.', 'warning');
+            } else {
+                submitDeposit(trxId, currentDepositAmount);
+            }
+        }
+    }
+
+    // --- REUSED EXISTING LOGIC FUNCTIONS ---
+
+    // Manual Deposit Logic
+    function submitDeposit(trxId, amount) {
+        Swal.showLoading();
+        db.collection('deposits').add({
+            userId: currentUser.uid, 
+            amount: parseInt(amount), 
+            trxId: trxId.toUpperCase(), 
+            status: 'pending', 
+            date: new Date(), 
+            userEmail: currentUser.email,
+            method: currentPaymentMethod
+    // --- ১৯৫৯ লাইনের পর থেকে নিচের কোডটি বসান ---
+
+    // Main Verify Handler
+    function handleNewVerify() {
+        const trxInput = document.getElementById('pay-trx-input');
+        if (!trxInput) return;
+        
+        const trxId = trxInput.value.trim();
+        if (!trxId) {
+            return Swal.fire('প্রয়োজনীয়', 'দয়া করে ট্রানজেকশন আইডি দিন।', 'warning');
+        }
+
+        // অটো পে ইনেবল থাকলে ভেরিফাই ফাংশন কল হবে
+        if (typeof isAutoPayEnabled !== 'undefined' && isAutoPayEnabled) {
+            verifyAutoPayment(trxId, currentDepositAmount);
+        } else {
+            // যদি ডিরেক্ট বাই হয় এবং অটো পে অফ থাকে
+            if (typeof isDirectBuy !== 'undefined' && isDirectBuy) {
+                Swal.fire('Notice', 'ইনস্ট্যান্ট বাই এর জন্য অটো-পেমেন্ট অন থাকতে হবে।', 'warning');
+            } else {
+                submitDeposit(trxId, currentDepositAmount);
+            }
+        }
+    }
+
+    // Manual Deposit Logic
+    function submitDeposit(trxId, amount) {
+        Swal.fire({
+            title: 'Submitting...',
+            didOpen: () => { Swal.showLoading() }
+        });
+
+        db.collection('deposits').add({
+            userId: currentUser.uid, 
+            amount: parseInt(amount), 
+            trxId: trxId.toUpperCase(), 
+            status: 'pending', 
+            date: new Date(), 
+            userEmail: currentUser.email,
+            method: currentPaymentMethod || 'Manual'
+        }).then(() => {
+            Swal.fire({
+                title: 'অর্ডার জমা হয়েছে', 
+                text: 'আপনার রিকোয়েস্টটি পেন্ডিং আছে। এডমিন চেক করে ব্যালেন্স অ্যাড করে দেবে।', 
+                icon: 'success',
+                confirmButtonColor: '#d33'
+            }).then(() => {
+                showSec('home'); 
+            });
+        }).catch(err => Swal.fire('Error', err.message, 'error'));
+    }
+
+    // Auto Payment Logic (SMS Reader App এর জন্য)
+    async function verifyAutoPayment(trxId, amount) {
+        trxId = trxId.toUpperCase();
+        
+        Swal.fire({
+            title: 'Verifying...',
+            text: 'আপনার পেমেন্টটি ডাটাবেসে চেক করা হচ্ছে। দয়া করে অপেক্ষা করুন।',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading() }
+        });
+
+        try {
+            // ১. ট্রানজেকশন আইডি আগে ব্যবহার হয়েছে কি না চেক
+            const existingTrxCheck = await db.collection('deposits').where('trxId', '==', trxId).limit(1).get();
+            if (!existingTrxCheck.empty) {
+                return Swal.fire('ব্যবহৃত', 'এই ট্রানজেকশন আইডিটি ইতিমধ্যে ব্যবহার করা হয়েছে।', 'error');
+            }
+
+            // ২. Realtime DB চেক করা (XNXANIKPAY নোড)
+            rtdb.ref('XNXANIKPAY').orderByChild('txid').equalTo(trxId).once('value', async (snapshot) => {
+                if (!snapshot.exists()) {
+                    // যদি ১ মিনিটের মধ্যে অটোমেটিক না পাওয়া যায়
+                    return Swal.fire({
+                        title: 'পেমেন্ট পাওয়া যায়নি',
+                        text: 'আপনার ট্রানজেকশনটি এখনো অটো-ভেরিফাই হয়নি। আপনি কি এটি ম্যানুয়ালি রিভিউয়ের জন্য পাঠাতে চান?',
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'হ্যাঁ, পাঠান',
+                        cancelButtonText: 'না, অপেক্ষা করি'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            submitDeposit(trxId, amount);
+                        }
+                    });
+                }
+                
+                let paymentData = null;
+                snapshot.forEach((childSnapshot) => {
+                    paymentData = childSnapshot.val();
+                });
+
+                // ৩. টাকার পরিমাণ চেক করা
+                if (parseInt(paymentData.amount) < parseInt(amount)) {
+                    return Swal.fire('Mismatch', `টাকার পরিমাণ মিলছে না! সিস্টেমে পাওয়া গেছে ৳${paymentData.amount}`, 'error');
+                }
+
+                const amountToAdd = parseInt(paymentData.amount);
+                const userRef = db.collection('users').doc(currentUser.uid);
+
+                // ৪. ব্যালেন্স আপডেট করা
+                await db.runTransaction(async (transaction) => {
+                    const userDoc = await transaction.get(userRef);
+                    const newBalance = (userDoc.data().balance || 0) + amountToAdd;
+                    transaction.update(userRef, { balance: newBalance });
+                });
+                
+                // ৫. ডিপোজিট রিপোর্ট সেভ করা
+                await db.collection('deposits').add({
+                    userId: currentUser.uid,
+                    userEmail: currentUser.email,
+                    amount: amountToAdd,
+                    trxId: trxId,
+                    status: 'approved',
+                    method: (currentPaymentMethod || 'Auto') + ' (Verified)',
+                    date: new Date()
+                });
+                
+                // ৬. যদি ডিরেক্ট বাই (অর্ডার) থাকে তবে সাথে সাথে প্রসেস করা
+                if (typeof isDirectBuy !== 'undefined' && isDirectBuy && pendingDirectOrder) {
+                    userBalance += amountToAdd; // লোকাল ব্যালেন্স আপডেট
                     
                     Swal.fire({
-                        title: 'Payment Verified!',
-                        text: 'Processing your order now...',
+                        title: 'পেমেন্ট সফল!',
+                        text: 'আপনার অর্ডারটি প্রসেস করা হচ্ছে...',
                         icon: 'success',
                         timer: 2000,
                         showConfirmButton: false
                     });
                     
-                    // Trigger the specific order function
                     if (pendingDirectOrder.gameType === 'code') {
                          await processVoucherOrder(pendingDirectOrder.playerId);
                     } else if (pendingDirectOrder.gameType === 'auto-topup') {
@@ -2097,17 +2266,15 @@
                     isDirectBuy = false;
                     pendingDirectOrder = null;
                 } else {
-                    Swal.fire('Success', `Successfully added ৳${amountToAdd} to your wallet.`, 'success')
+                    Swal.fire('সফল!', `আপনার ওয়ালেটে ৳${amountToAdd} যোগ করা হয়েছে।`, 'success')
                         .then(() => showSec('home'));
                 }
-                
-            } catch (error) {
-                console.error("Auto payment error:", error);
-                Swal.fire('Failed', 'System error during balance update. Contact support.', 'error');
-            }
-        });
+            });
+        } catch (error) {
+            console.error("Auto payment error:", error);
+            Swal.fire('ব্যর্থ', 'সিস্টেম এরর! এডমিনের সাথে যোগাযোগ করুন।', 'error');
+        }
     }
-
 </script>
 </body>
 </html>
