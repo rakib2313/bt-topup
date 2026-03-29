@@ -1661,37 +1661,46 @@
         }
     }
 
-    function uidCheck() {
-        const uid = document.getElementById("game-player-id").value;
-        const box = document.getElementById("uidCheckBtn");
+    async function uidCheck() {
+    const uidInput = document.getElementById("game-player-id");
+    const uid = uidInput.value.trim();
+    const box = document.getElementById("uidCheckBtn");
 
-        if (!uid) {
-            box.innerHTML = "Please enter a UID!";
-            box.classList.remove("bg-gradient-to-r", "from-red-700", "to-orange-500");
-            box.classList.add("bg-black");
-            return;
-        }
-
-        box.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Name is loading...';
-        box.classList.remove("bg-gradient-to-r", "from-red-700", "to-orange-500");
-        box.classList.add("bg-black");
-
-        const apiURL = `https://bhauxinfo2.vercel.app/bhau?uid=${uid}&region=BD`;
-
-        fetch(apiURL)
-            .then(res => res.json())
-            .then(data => {
-                let name =
-                    (data.basicInfo && data.basicInfo.nickname) ||
-                    data.nickname ||
-                    "Invalid UID ";
-
-                box.innerHTML = name; 
-            })
-            .catch(() => {
-                box.innerHTML = "No nickname found!";
-            });
+    if (!uid) {
+        box.innerHTML = "UID দিন!";
+        return;
     }
+
+    // লোডিং এনিমেশন
+    box.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+    box.style.background = "#000";
+
+    try {
+        // নতুন এবং ফাস্ট এপিআই (এটি রিজিয়ন অনুযায়ী নাম নিয়ে আসে)
+        const response = await fetch(`https://freefire-api-six.vercel.app/api/freefire?id=${uid}`);
+        const data = await response.json();
+
+        // ডেটা চেক করা হচ্ছে
+        if (data && data.nickname && data.nickname !== "Invalid Player ID") {
+            box.innerHTML = `
+                <div style="line-height: 1.2;">
+                    <span style="color: #00ff00; font-weight: bold;">✅ ${data.nickname}</span><br>
+                    <small style="color: #eee; font-size: 10px;">Player ID: ${uid}</small>
+                </div>`;
+            box.style.background = "linear-gradient(to right, #1d976c, #93f9b9)";
+            box.style.color = "#fff";
+        } else {
+            // যদি এপিআই নাম না পায়
+            box.innerHTML = "❌ Player Not Found";
+            box.style.background = "#ff4d4d";
+        }
+    } catch (error) {
+        console.error("API Error:", error);
+        // যদি উপরের এপিআই কাজ না করে তবে এই ব্যাকআপ ট্রাই করবে
+        box.innerHTML = "⚠️ Server Busy. Try Again";
+        box.style.background = "#333";
+    }
+}
 
     // --- OTHER HELPERS ---
     function showSec(secId) {
