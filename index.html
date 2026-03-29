@@ -1671,34 +1671,48 @@
         return;
     }
 
-    // লোডিং এনিমেশন
-    box.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-    box.style.background = "#000";
+    box.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+    box.style.background = "#111";
+
+    // সোর্স ১: গ্লোবাল এপিআই
+    const url1 = `https://freefire-api-six.vercel.app/api/freefire?id=${uid}`;
+    // সোর্স ২: ব্যাকআপ এপিআই (পাবলিক প্রক্সি সহ)
+    const url2 = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://api.freefire.rocks/v1/player?uid=${uid}`)}`;
 
     try {
-        // নতুন এবং ফাস্ট এপিআই (এটি রিজিয়ন অনুযায়ী নাম নিয়ে আসে)
-        const response = await fetch(`https://freefire-api-six.vercel.app/api/freefire?id=${uid}`);
-        const data = await response.json();
+        // প্রথম সোর্স ট্রাই করা হচ্ছে
+        let response = await fetch(url1);
+        let data = await response.json();
 
-        // ডেটা চেক করা হচ্ছে
-        if (data && data.nickname && data.nickname !== "Invalid Player ID") {
-            box.innerHTML = `
-                <div style="line-height: 1.2;">
-                    <span style="color: #00ff00; font-weight: bold;">✅ ${data.nickname}</span><br>
-                    <small style="color: #eee; font-size: 10px;">Player ID: ${uid}</small>
-                </div>`;
-            box.style.background = "linear-gradient(to right, #1d976c, #93f9b9)";
-            box.style.color = "#fff";
+        if (data && data.nickname) {
+            showSuccess(data.nickname, uid);
         } else {
-            // যদি এপিআই নাম না পায়
-            box.innerHTML = "❌ Player Not Found";
-            box.style.background = "#ff4d4d";
+            throw new Error("Source 1 failed");
         }
-    } catch (error) {
-        console.error("API Error:", error);
-        // যদি উপরের এপিআই কাজ না করে তবে এই ব্যাকআপ ট্রাই করবে
-        box.innerHTML = "⚠️ Server Busy. Try Again";
-        box.style.background = "#333";
+    } catch (err) {
+        console.log("Source 1 error, trying Source 2...");
+        try {
+            // দ্বিতীয় সোর্স ট্রাই করা হচ্ছে
+            let res2 = await fetch(url2);
+            let rawData = await res2.json();
+            let data2 = JSON.parse(rawData.contents);
+
+            if (data2 && data2.nickname) {
+                showSuccess(data2.nickname, uid);
+            } else {
+                box.innerHTML = "❌ Player Not Found";
+                box.style.background = "#ff4d4d";
+            }
+        } catch (err2) {
+            box.innerHTML = "⚠️ Server Down. Try Later";
+            box.style.background = "#333";
+        }
+    }
+
+    function showSuccess(name, id) {
+        box.innerHTML = `✅ ${name} <br> <small style="font-size:10px">ID: ${id}</small>`;
+        box.style.background = "linear-gradient(to right, #1d976c, #93f9b9)";
+        box.style.color = "#fff";
     }
 }
 
