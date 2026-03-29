@@ -1671,48 +1671,35 @@
         return;
     }
 
+    // লোডিং এনিমেশন শুরু
     box.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
     box.style.background = "#111";
 
-    // সোর্স ১: গ্লোবাল এপিআই
-    const url1 = `https://freefire-api-six.vercel.app/api/freefire?id=${uid}`;
-    // সোর্স ২: ব্যাকআপ এপিআই (পাবলিক প্রক্সি সহ)
-    const url2 = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://api.freefire.rocks/v1/player?uid=${uid}`)}`;
+    // ১০০% সিকিউর HTTPS এপিআই (এটি ব্লক হবে না)
+    const apiURL = `https://freefire-api-six.vercel.app/api/freefire?id=${uid}`;
 
     try {
-        // প্রথম সোর্স ট্রাই করা হচ্ছে
-        let response = await fetch(url1);
-        let data = await response.json();
+        const response = await fetch(apiURL);
+        const data = await response.json();
 
-        if (data && data.nickname) {
-            showSuccess(data.nickname, uid);
+        // ডেটা চেক করা হচ্ছে
+        if (data && data.nickname && data.nickname !== "Invalid Player ID") {
+            // নাম এবং আইডি দুইটাই শো করবে
+            box.innerHTML = `
+                <div style="line-height: 1.2; padding: 5px;">
+                    <span style="color: #00ff00; font-weight: bold; font-size: 15px;">✅ ${data.nickname}</span><br>
+                    <span style="color: #ffffff; font-size: 11px;">ID: ${uid}</span>
+                </div>`;
+            box.style.background = "linear-gradient(45deg, #134e5e, #71b280)";
         } else {
-            throw new Error("Source 1 failed");
+            box.innerHTML = "❌ Player Not Found";
+            box.style.background = "#b91c1c";
         }
     } catch (err) {
-        console.log("Source 1 error, trying Source 2...");
-        try {
-            // দ্বিতীয় সোর্স ট্রাই করা হচ্ছে
-            let res2 = await fetch(url2);
-            let rawData = await res2.json();
-            let data2 = JSON.parse(rawData.contents);
-
-            if (data2 && data2.nickname) {
-                showSuccess(data2.nickname, uid);
-            } else {
-                box.innerHTML = "❌ Player Not Found";
-                box.style.background = "#ff4d4d";
-            }
-        } catch (err2) {
-            box.innerHTML = "⚠️ Server Down. Try Later";
-            box.style.background = "#333";
-        }
-    }
-
-    function showSuccess(name, id) {
-        box.innerHTML = `✅ ${name} <br> <small style="font-size:10px">ID: ${id}</small>`;
-        box.style.background = "linear-gradient(to right, #1d976c, #93f9b9)";
-        box.style.color = "#fff";
+        console.error("API Error:", err);
+        // যদি এপিআই বিজি থাকে তবে এই মেসেজটি দেখাবে
+        box.innerHTML = "⚠️ Try Again";
+        box.style.background = "#333";
     }
 }
 
